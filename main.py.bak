@@ -1,0 +1,200 @@
+# Import modules
+import csv, os, time, psutil
+import threading
+import customtkinter as ctk
+
+# Import functions
+import SetEnviron
+import setup_db
+from app import app
+import funcs as funcs
+import sqlite3, os
+
+# Setup Environments
+SetEnviron.SetEnviron()
+
+
+# Setup Database
+if os.path.exists('db.sqlite'):
+    os.remove('db.sqlite')
+conn = sqlite3.connect('db.sqlite')
+cursor = conn.cursor()
+sql_query = """ CREATE TABLE browser (
+    id integer PRIMARY KEY,
+    status integer NOT NULL
+) """
+try:
+    cursor.execute(sql_query)
+except sqlite3.OperationalError as e:
+    print(e)
+def setup_table():
+    sql = """INSERT INTO browser (status) 
+                VALUES (?)"""
+    conn.execute(sql, (0,))
+    conn.commit()
+setup_table()
+
+
+# Start Flask
+if __name__ == '__main__':
+    tr = threading.Thread(target=app.run)
+    tr.start()
+
+
+# Required functions
+def exit_chrome():
+    subprocess.call("TASKKILL /f  /IM  CHROME.EXE")
+
+
+def exit_chrome_linux():
+    def get_chrome_pid():
+        chrome_procs = []
+        for proc in psutil.process_iter(['pid', 'name']):
+            if 'chrome' in proc.info['name'].lower():
+                chrome_procs.append(proc.info['pid'])
+        return chrome_procs
+    chrome_pids = get_chrome_pid()
+    for pid in chrome_pids:
+        os.system(f'kill -9 {pid}')
+
+
+def remove_old_file():
+    if os.path.exists('Extract.txt'):
+        os.remove('Extract.txt')
+remove_old_file()
+
+
+# Start operations
+
+
+def start():
+    spreadsheet_id = spreadsheet_id_entry.get()
+    spreadsheet_name = spreadsheet_name_entry.get()
+    leads_file_name = leads_file_name_entry.get()
+    street_column = int(street_column_entry.get()) - 1
+    zip_column = int(zip_column_entry.get()) - 1
+    state_col = zip_column - 1
+    city_col = state_col - 1
+    license_key = license_key_entry.get()
+
+    if os.path.exists('.env'):
+        os.remove(".env")
+
+    with open(".env", "a") as f:
+        f.write(f"SPREADSHEET_ID = {spreadsheet_id} \n")
+        f.write(f"SPREADSHEET_NAME = {spreadsheet_name} \n")
+        f.write(f"LEADS_FILE_NAME = {leads_file_name} \n")
+        f.write(f"STREET_COL = {street_column_entry.get()} \n")
+        f.write(f"ZIP_COL = {zip_column_entry.get()} \n")
+
+    lines = []
+
+    with open(leads_file_name, 'r') as csv_file:
+        csv_render = csv.reader(csv_file)
+        for line in csv_render:
+            lines.append(f"{line[street_column]},,{line[city_col]}, {line[state_col]} {line[zip_column]}")
+
+
+    for line in lines:
+        print(line)
+        print(f"Line Length: {len(line)}")
+        if len(line) < 10:
+            continue
+        address = line.split(",,")
+
+        street = address[0]
+        city_state = address[1]
+
+        splited = city_state[:-6].split()
+        state = " ".join(splited)
+
+        street_chars = street.split()
+        street_search = '%20'.join(street_chars)
+        city_state_chars = city_state.split()
+        city_state_search = '%20'.join(city_state_chars)
+
+        print("\n\n", f"Searching: {street.strip()}, {city_state.strip()}", "\n\n")
+
+        def get_search_results():
+            while True:
+                try:
+                    funcs.input_search(street_search, city_state_search)
+                    print("Trying to get links")
+                    results = funcs.get_links(street, state)
+                    exit_chrome_linux()
+                    return results
+                except Exception as e:
+                    print(e)
+                    exit_chrome_linux()
+                    print("Failed opening browser")
+
+        results = get_search_results()
+        print(results)
+
+        for result in results:
+            try:
+                funcs.open_persons(result['link'], street, result['name'], result['address'], True)
+                exit_chrome_linux()
+            except Exception as e:
+                print(f'Error: {e}')
+                def get_person():
+                    while True:
+                        try:
+                            print("Trying exit browser and restart")
+                            exit_chrome_linux()
+                            funcs.open_persons(result['link'], street, result['name'], result['address'], True)
+                            exit_chrome_linux()
+                            return
+                        except Exception as e:
+                            print(e)
+                get_person()
+
+
+
+if os.path.exists(".env"):
+    with open('.env', 'r') as f:
+        values = f.readlines()
+    
+try:
+    spreadsheet_id_default = values[0].split("=")[1].strip()
+    spreadsheet_name_default = values[1].split("=")[1].strip()
+    leads_file_name_default = values[2].split("=")[1].strip()
+    street_column_default = values[3].split("=")[1].strip()
+    zip_column_default = values[4].split("=")[1].strip()
+except:
+    spreadsheet_id_default = ""
+    spreadsheet_name_default = "Date"
+    leads_file_name_default = ""
+    street_column_default = 16
+    zip_column_default = 20
+
+
+ctk.set_appearance_mode("pitch-black")
+ctk.set_default_color_theme("dark-blue")
+root = ctk.CTk()
+root.title('Truepeoplesearch Scraper')
+root.geometry("500x500")
+frame = ctk.CTkFrame(master=root)
+frame.pack(pady=25, padx=50, fill="both", expand=True)
+label = ctk.CTkLabel(master=frame, text="Settings", font=("Roboto", 24))
+label.pack(pady=15, padx=15)
+spreadsheet_id_entry = ctk.CTkEntry(master=frame, placeholder_text="Spreadsheet ID")
+spreadsheet_id_entry.insert(0, spreadsheet_id_default)
+spreadsheet_id_entry.pack(pady=12, padx=10)
+spreadsheet_name_entry = ctk.CTkEntry(master=frame, placeholder_text="Spreadsheet Name")
+spreadsheet_name_entry.insert(0, spreadsheet_name_default)
+spreadsheet_name_entry.pack(pady=12, padx=10)
+leads_file_name_entry = ctk.CTkEntry(master=frame, placeholder_text="CSV File Name")
+leads_file_name_entry.insert(0, leads_file_name_default)
+leads_file_name_entry.pack(pady=12, padx=10)
+street_column_entry = ctk.CTkEntry(master=frame, placeholder_text="Street Column")
+street_column_entry.insert(0, street_column_default)
+street_column_entry.pack(pady=12, padx=10)
+zip_column_entry = ctk.CTkEntry(master=frame, placeholder_text="Street Column")
+zip_column_entry.insert(0, zip_column_default)
+zip_column_entry.pack(pady=12, padx=10)
+license_key_entry = ctk.CTkEntry(master=frame, placeholder_text="License Key", show="*")
+license_key_entry.pack(pady=12, padx=10)
+button_entry = ctk.CTkButton(master=frame, text="Start", command=start)
+button_entry.pack(pady=12, padx=10)
+root.mainloop()
