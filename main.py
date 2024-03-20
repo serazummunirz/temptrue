@@ -1,7 +1,54 @@
+import os
+import customtkinter as ctk
+
+if os.path.exists('db.sqlite'):
+    os.remove('db.sqlite')
+
+from licensing.models import *
+from licensing.methods import Key, Helpers
+
+
+def invalid_license_error():
+
+    ctk.set_appearance_mode("pitch-black")
+    ctk.set_default_color_theme("dark-blue")
+    root = ctk.CTk()
+    root.title('Truepeoplesearch Scraper')
+    root.geometry("320x200")
+    frame = ctk.CTkFrame(master=root)
+    frame.pack(pady=25, padx=50, fill="both", expand=True)
+    label = ctk.CTkLabel(master=frame, text="Error:", font=("Roboto", 24))
+    message = ctk.CTkLabel(master=frame, text="License is invalid or expired.", font=("Roboto", 15))
+    label.pack(pady=15, padx=15)
+    message.pack(pady=15, padx=15)
+    root.mainloop()
+    exit()
+
+
+def license_is_valid(license_key):
+
+    RSAPubKey = "<RSAKeyValue><Modulus>w2ajQuQeNN+zcqaLZkL6pm9tZiCq/SeEZ/La/MwKiJu1qrg96i5tZ59vlgInpPX8rd+CGoUR4mB9IsUi75Z/HyXuVdwPFPu7hSvxkhX4C7I8JanNxt5jbvEl7hYX7NuzawORphIuxpep22TZBMRB8279cex41gClM/wrdjxbtryUdqDpgRaHYdI7+JO02kp9WuI3l4/cXnvgAK3/snNIKkNhZqVE6Ukv6cbJTTh0gMtvwnWZw5KUHm5CqKsSW5O5kWLYdZmaRHtHr0Lvm2HYBfnl563T0yfd9/i7tyrN05GQXAaSJSLuxBXZA1cI0gEYKOAS/+atcjQXYHdIl3ArpQ==</Modulus><Exponent>AQAB</Exponent></RSAKeyValue>"
+    auth = "WyI3ODE5MjE2OSIsIjA0TFR4RDl2aW1aUlBkbTdtYVNHb2tIbXJ2clZQM2RZTXlwRm1YbkQiXQ=="
+
+    result = Key.activate(token=auth,\
+                    rsa_pub_key=RSAPubKey,\
+                    product_id=24644, \
+                    key=license_key,\
+                    machine_code=Helpers.GetMachineCode(v=2))
+
+    if result[0] == None or not Helpers.IsOnRightMachine(result[0], v=2):
+        return False
+    else:
+        return True
+
+
+# if not license_is_valid():
+#     invalid_license_error()
+
+
 # Import modules
 import csv, os, time, psutil
 import threading
-import customtkinter as ctk
 
 # Import API Modules
 from flask import Flask, request, jsonify
@@ -29,12 +76,11 @@ from selenium.common.exceptions import TimeoutException
 operating_system = "linux"
 
 # Import functions
-import setup_db
+# import setup_db
 import sqlite3, os
 
 # Setup Database
-if os.path.exists('db.sqlite'):
-    os.remove('db.sqlite')
+
 conn = sqlite3.connect('db.sqlite')
 cursor = conn.cursor()
 sql_query = """ CREATE TABLE browser (
@@ -160,6 +206,8 @@ def browser_port(id):
 
 # Start Flask
 if __name__ == '__main__':
+    # if not license_is_valid():
+    #     invalid_license_error()
     tr = threading.Thread(target=app.run)
     tr.start()
 
@@ -210,7 +258,7 @@ def browser_open(url, page):
     if operating_system == "linux":
         subprocess.call(['google-chrome', '--no-sandbox', '--hide-crash-restore-bubble', '--remote-debugging-port=9001', url], stdout=open(os.devnull, "w"), stderr=subprocess.STDOUT)
     else:
-        command = f'start chrome --hide-crash-restore-bubble --remote-debugging-port=9222 "{url}"'
+        command = f'start chrome --hide-crash-restore-bubble --remote-debugging-port=9001 "{url}"'
         os.system(command)
 
 
@@ -431,6 +479,9 @@ def open_persons(url, street, name, address, browser):
 
 
 def start():
+    license_key = license_key_entry.get()
+    if not license_is_valid(license_key):
+        invalid_license_error()
     spreadsheet_id = spreadsheet_id_entry.get()
     spreadsheet_name = spreadsheet_name_entry.get()
     leads_file_name = leads_file_name_entry.get()
@@ -438,7 +489,7 @@ def start():
     zip_column = int(zip_column_entry.get()) - 1
     state_col = zip_column - 1
     city_col = state_col - 1
-    license_key = license_key_entry.get()
+    
 
     if os.path.exists('.env'):
         os.remove(".env")
@@ -449,6 +500,7 @@ def start():
         f.write(f"LEADS_FILE_NAME = {leads_file_name} \n")
         f.write(f"STREET_COL = {street_column_entry.get()} \n")
         f.write(f"ZIP_COL = {zip_column_entry.get()} \n")
+        f.write(f"LICENSE_KEY = {license_key_entry.get()} \n")
 
     lines = []
 
@@ -457,8 +509,18 @@ def start():
         for line in csv_render:
             lines.append(f"{line[street_column]},,{line[city_col]}, {line[state_col]} {line[zip_column]}")
 
+    start_line = int(start_line_entry.get())
 
-    for line in lines:
+    print(f"Start Line: {start_line}")
+
+    for line in lines[start_line:]:
+        license_key = license_key_entry.get()
+        if not license_is_valid(license_key):
+            invalid_license_error()
+        start_line += 1
+        with open("start_line.txt", 'w') as f:
+            f.write(str(start_line))
+
         print(line)
         print(f"Line Length: {len(line)}")
         if len(line) < 10:
@@ -501,6 +563,8 @@ def start():
         print(results)
 
         for result in results:
+            if not license_is_valid(license_key):
+                invalid_license_error()
             try:
                 open_persons(result['link'], street, result['name'], result['address'], True)
                 if operating_system == "linux":
@@ -532,19 +596,35 @@ def start():
 if os.path.exists(".env"):
     with open('.env', 'r') as f:
         values = f.readlines()
-    
+
+if os.path.exists("start_line.txt"):
+    with open('start_line.txt', 'r') as f:
+        start_line = f.readlines()
+
 try:
     spreadsheet_id_default = values[0].split("=")[1].strip()
     spreadsheet_name_default = values[1].split("=")[1].strip()
     leads_file_name_default = values[2].split("=")[1].strip()
     street_column_default = values[3].split("=")[1].strip()
     zip_column_default = values[4].split("=")[1].strip()
+    license_key_column_default = values[5].split("=")[1].strip()
 except:
     spreadsheet_id_default = ""
     spreadsheet_name_default = "Date"
     leads_file_name_default = ""
     street_column_default = 16
     zip_column_default = 20
+    license_key_column_default = values[5].split("=")[1].strip()
+
+
+try:
+    start_line_default = start_line[0]
+except:
+    start_line_default = 0
+
+
+print(f"Start line default: {start_line_default}")
+
 
 def stop():
     if operating_system == "linux":
@@ -562,10 +642,13 @@ def stop():
         for pid in scraper_procs:
             os.system(f'kill -9 {pid}')
     else:
-        subprocess.call("TASKKILL /f  /IM  python")
+        exit()
 
 
 def safe_start():
+    license_key = license_key_entry.get()
+    if not license_is_valid(license_key):
+        invalid_license_error()
     tr = threading.Thread(target=start)
     tr.start()
 
@@ -586,16 +669,20 @@ spreadsheet_id_entry.pack(pady=12, padx=10)
 spreadsheet_name_entry = ctk.CTkEntry(master=frame, placeholder_text="Spreadsheet Name")
 spreadsheet_name_entry.insert(0, spreadsheet_name_default)
 spreadsheet_name_entry.pack(pady=12, padx=10)
+start_line_entry = ctk.CTkEntry(master=frame, placeholder_text="Start Line Number")
+start_line_entry.insert(0, start_line_default)
+start_line_entry.pack(pady=12, padx=10)
 leads_file_name_entry = ctk.CTkEntry(master=frame, placeholder_text="CSV File Name")
 leads_file_name_entry.insert(0, leads_file_name_default)
 leads_file_name_entry.pack(pady=12, padx=10)
 street_column_entry = ctk.CTkEntry(master=frame, placeholder_text="Street Column")
 street_column_entry.insert(0, street_column_default)
 street_column_entry.pack(pady=12, padx=10)
-zip_column_entry = ctk.CTkEntry(master=frame, placeholder_text="Street Column")
+zip_column_entry = ctk.CTkEntry(master=frame, placeholder_text="Zip Column")
 zip_column_entry.insert(0, zip_column_default)
 zip_column_entry.pack(pady=12, padx=10)
 license_key_entry = ctk.CTkEntry(master=frame, placeholder_text="License Key", show="*")
+license_key_entry.insert(0, license_key_column_default)
 license_key_entry.pack(pady=12, padx=10)
 button_entry = ctk.CTkButton(master=frame, text="Start", command=safe_start)
 button_entry.pack(pady=12, padx=10)

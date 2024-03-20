@@ -19,7 +19,7 @@ spreadsheet_name_entry.insert(0, "Default Value")  # Insert the default value
 spreadsheet_name_entry.pack()
 
 # Create the submit button
-submit_button = ctk.CTkButton(master=frame, text="Submit", command=submit_action)
+submit_button = ctk.CTkButton(master=frame, text="Exit", command=submit_action)
 submit_button.pack()
 
 # Add your GUI widgets and functionality here...
